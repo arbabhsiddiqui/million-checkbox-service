@@ -1,0 +1,34 @@
+{
+  "name": "Million Checkbox + Postgres Dev",
+  "remoteUser": "node",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/app",
+  "shutdownAction": "stopCompose",
+  "overrideCommand": true,
+  "mounts": [
+    "source=${localEnv:HOME}/.gitconfig,target=/home/node/.gitconfig,type=bind,consistency=cached"
+  ],
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "streetsidesoftware.code-spell-checker",
+        "mhutchie.git-graph",
+        "eamodio.gitlens",
+        "kisstkondoros.vscode-gutter-preview",
+        "oderwat.indent-rainbow",
+        "christian-kohler.path-intellisense",
+        "Gruntfuggly.todo-tree",
+        "vscode-icons-team.vscode-icons",
+        "vscodevim.vim",
+        "rodrigovallades.es7-react-js-snippets",
+        "formulahendry.auto-rename-tag",
+        "formulahendry.auto-close-tag"
+      ]
+    }
+  }
+}

@@ -1,0 +1,34 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: million_checkbox_app
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      # - pnpm-store:/pnpm/store
+      # - /app/node_modules
+    environment:
+      DATABASE_URL: postgres://admin:admin@postgres:5432/million_checkbox_db
+    depends_on:
+      - postgres
+    command: tail -f /dev/null
+
+  postgres:
+    image: postgres:17
+    container_name: million_checkbox_db
+    restart: unless-stopped
+    ports:
+      - "5445:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: million_checkbox_db
+    volumes:
+      - pgdatamillioncheckboxdb:/var/lib/postgresql/data
+
+volumes:
+  pgdatamillioncheckboxdb:
+  # pnpm-store:
