@@ -9,6 +9,7 @@ import { index } from 'drizzle-orm/sqlite-core/indexes';
 
 export const CHECKBOX_SIZE = 300;
 export const CHECKBOX_STATE_KEY = 'checkbox-state'
+const rateLimitingHashMap = new Map()
 
 async function main() {
     try {
@@ -33,6 +34,22 @@ async function main() {
             socket.on('client:checkbox-change', async (data) => {
 
                 console.log(`[Socket:${socket.id}:client:checkbox:change]`, data)
+
+                const lastOperationTime = rateLimitingHashMap.get(socket.id)
+
+                if (lastOperationTime) {
+                    const timeElapsed = Date.now() - lastOperationTime;
+                    if (timeElapsed < 5.5 * 1000) {
+                        socket.emit('server:error', { error: 'Rate limit exceeded. Please wait before sending another update.' })
+                    }
+                }
+
+
+                rateLimitingHashMap.set(socket.id, Date.now())
+
+
+
+
 
                 const existingState = await redis.get(CHECKBOX_STATE_KEY)
 

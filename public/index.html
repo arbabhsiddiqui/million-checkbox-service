@@ -17,19 +17,101 @@
     #container {
         display: flex;
         flex-wrap: wrap;
-        gap: 5px;
+        gap: 8px;
+        max-height: 70vh;
+        overflow: auto;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 8px;
+    }
+
+    #container input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        margin: 4px;
+        accent-color: #1db954;
+        transform: scale(1.05);
+    }
+
+    /* Toast styles (higher contrast) */
+    #toast-container {
+        position: fixed;
+        right: 20px;
+        top: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 99999;
+        pointer-events: none;
+    }
+
+    .toast {
+        pointer-events: auto;
+        min-width: 240px;
+        max-width: 420px;
+        background: linear-gradient(90deg, rgba(25, 25, 25, 0.96), rgba(18, 18, 18, 0.96));
+        color: #fff;
+        padding: 12px 16px;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+        opacity: 0;
+        transform: translateY(-10px) scale(0.985);
+        transition: opacity 240ms cubic-bezier(.2, .9, .2, 1), transform 240ms cubic-bezier(.2, .9, .2, 1);
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+
+    .toast.show {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    .toast.error {
+        border-left: 6px solid #ff5c5c;
+        background: linear-gradient(90deg, rgba(30, 18, 18, 0.98), rgba(18, 14, 14, 0.98));
     }
 </style>
 
 <body>
     <h1>1 Million Checkboxes</h1>
     <div id="container"></div>
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         const container = document.getElementById('container');
 
+        /* Toast helper */
+        function showToast(message, type = 'info', timeout = 5000) {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+
+            const toast = document.createElement('div');
+            toast.className = `toast ${type || ''}`.trim();
+            toast.textContent = message;
+
+            toast.addEventListener('click', () => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 220);
+            });
+
+            container.appendChild(toast);
+
+            // Force reflow then show
+            requestAnimationFrame(() => toast.classList.add('show'));
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 220);
+            }, timeout);
+        }
+
+        socket.on('server:error', (data) => {
+            console.error("Server error:", data.error);
+            showToast(data.error || 'Server error', 'error');
+        });
 
         socket.on('server:checkbox-change', (data) => {
             console.log("socket server event", data)
@@ -43,7 +125,14 @@
 
         })
 
-        window.addEventListener("load", async () => {
+
+        async function fetchFromServer() {
+
+            while (container.firstChild) {
+                container.removeChild(container.firstChild);
+            }
+
+
             // Fetch initial state from the server
             const res = await fetch('/checkboxes')
             const data = await res.json()
@@ -63,7 +152,7 @@
 
                         socket.emit('client:checkbox-change', { index, checked })
 
-
+                        fetchFromServer()
 
 
                     });
@@ -72,6 +161,10 @@
                 });
             }
 
+        }
+
+        window.addEventListener("load", async () => {
+            await fetchFromServer()
         });
 
 
