@@ -145,14 +145,14 @@
                     checkbox.checked = serverValue;
 
 
-                    checkbox.addEventListener('change', (e) => {
+                    checkbox.addEventListener('change', async (e) => {
 
                         const checked = e.target.checked;
                         console.log({ index, checked })
 
                         socket.emit('client:checkbox-change', { index, checked })
 
-                        fetchFromServer()
+                        await fetchFromServer()
 
 
                     });

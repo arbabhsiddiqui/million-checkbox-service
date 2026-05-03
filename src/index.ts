@@ -35,17 +35,15 @@ async function main() {
 
                 console.log(`[Socket:${socket.id}:client:checkbox:change]`, data)
 
-                const lastOperationTime = rateLimitingHashMap.get(socket.id)
+                const lastOperationTime = await redis.get(`rate-limiting:${socket.id}`)
 
                 if (lastOperationTime) {
-                    const timeElapsed = Date.now() - lastOperationTime;
+                    const timeElapsed = Date.now() - Number(lastOperationTime);
                     if (timeElapsed < 5.5 * 1000) {
-                        socket.emit('server:error', { error: 'Rate limit exceeded. Please wait before sending another update.' })
+                        socket.emit('server:error', { error: 'Rate limit exceeded. Please wait before sending another update.', index: data?.index })
+                        return
                     }
                 }
-
-
-                rateLimitingHashMap.set(socket.id, Date.now())
 
 
 
@@ -64,6 +62,9 @@ async function main() {
 
 
                 await publisher.publish('internal-server:checkbox:change', JSON.stringify(data))
+
+                // record the operation timestamp after a successful update
+                await redis.set(`rate-limiting:${socket.id}`, String(Date.now()))
 
             })
 
