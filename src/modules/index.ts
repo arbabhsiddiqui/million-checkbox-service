@@ -1,117 +1,154 @@
-import express from 'express'
-import type { Express } from 'express'
-
+import express, { Request, Response, NextFunction } from 'express';
+import type { Express } from 'express';
 import cookieParser from "cookie-parser";
-import { anonRole } from 'drizzle-orm/supabase';
+import jwt from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
+import { env } from '../common/config/env';
 
-// import { authRouter } from './auth/auth.routes'
-// import { router as oidcRouter } from './auth/oidc.routes'
+/**
+ * 1. JWKS Client Configuration
+ * This fetches the public key from the OIDC server (6001)
+ */
+const client = jwksClient({
+    // Use 'oidc_app' for server-to-server communication if in Docker, 
+    // otherwise use 'localhost'
+    jwksUri: `http://oidc_app:6001/.well-known/jwks.json`,
+    cache: true,
+    rateLimit: true
+});
 
+const getKey = (header: jwt.JwtHeader, callback: jwt.SigningKeyCallback) => {
+    client.getSigningKey(header.kid, (err, key) => {
+        if (err) return callback(err);
+        callback(null, key?.getPublicKey());
+    });
+};
 
+/**
+ * 2. Authentication Middleware
+ * Protects routes by checking the HttpOnly cookie
+ */
+const authenticate = (req: Request, res: Response, next: NextFunction) => {
+    const token = req.cookies.access_token;
+
+    if (!token) {
+        return res.status(401).send('<h1>401 Unauthorized</h1><p>Please <a href="/">login</a> first.</p>');
+    }
+
+    jwt.verify(
+        token,
+        getKey,
+        { algorithms: ['RS256'], issuer: 'http://localhost:6001' },
+        (err, decoded) => {
+            if (err) {
+                console.error('JWT Verification Error:', err.message);
+                res.clearCookie('access_token');
+                return res.status(401).redirect('/');
+            }
+            // Successfully decoded - attach to req.user
+            (req as any).user = decoded;
+            next();
+        }
+    );
+};
+
+/**
+ * 3. Application Factory
+ */
 export function createExpressApplication(): Express {
-    const app = express()
+    const app = express();
 
-
-    app.use(express.json())
+    app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
     app.use(cookieParser());
 
+    // Health Check
     app.get('/health', (req, res) => {
-        res.status(200).json({ status: 'ok' })
-    })
+        res.status(200).json({ status: 'ok' });
+    });
 
+    // Public Landing Page
     app.get("/", (req, res) => {
         res.send(`
-      <html></html>
-        <body>
-          <h1>Welcome to the OIDC Client App</h1>
-            <a href="http://localhost:6001/api/v1/auth/authorize?client_id=project1&redirect_uri=http://localhost:3001/callback&state=xyz">Login with OIDC</a>
-`)
-    })
+            <html>
+                <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                    <h1>Welcome to the OIDC Client App</h1>
+                    <p>Protect your session with HttpOnly Cookies</p>
+                    <a href="http://localhost:6001/api/v1/auth/authorize?client_id=project1&redirect_uri=http://localhost:3001/callback&state=xyz" 
+                       style="padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;">
+                       Login with OIDC Server
+                    </a>
+                </body>
+            </html>
+        `);
+    });
 
+    // OIDC Callback Route
     app.get('/callback', async (req, res) => {
         try {
-            // ✅ Correct way
-            const code = req.query.code as string
+            const code = req.query.code as string;
+            if (!code) return res.status(400).send('Missing authorization code');
 
-            if (!code) {
-                return res.status(400).send('Missing code')
-            }
-
-            // ✅ Exchange code → token
+            // Exchange Code for Tokens
             const result = await fetch('http://oidc_app:6001/api/v1/auth/token', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     code,
                     client_id: 'project1',
                     client_secret: 'secret123',
                 }),
-            })
-
-            console.log(result)
-
-            // If the token endpoint returned a non-2xx status, log body and return error
-            const contentType = result.headers.get('content-type') || ''
+            });
 
             if (!result.ok) {
-                const text = await result.text().catch(() => '<unable to read body>')
-                console.error('Token endpoint returned error', result.status, text)
-                return res.status(502).send('Token exchange failed')
+                const errorText = await result.text();
+                console.error('Token Exchange Failed:', errorText);
+                return res.status(502).send('Token exchange failed');
             }
 
-            // If content-type is not JSON, capture and log the body to help debugging
-            if (!contentType.includes('application/json')) {
-                const text = await result.text().catch(() => '<unable to read body>')
-                console.error('Token endpoint returned non-JSON response:', text)
-                return res.status(502).send('Token exchange returned non-JSON')
-            }
+            const data: any = await result.json();
 
-            const data: any = await result.json()
+            // ✅ SECURE STEP: Save access token in HttpOnly Cookie
+            res.cookie('access_token', data.accessToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'lax',
+                maxAge: 15 * 60 * 1000 // 15 minutes
+            });
 
-            if (!data) {
-                return res.status(400).send('Missing token response')
-            }
+            // Redirect to protected profile
+            res.redirect('/profile');
 
-            console.log('TOKEN RESPONSE:', data)
-
-            res.send(`<html>
-        <body>
-          <h2>Login Success</h2>
-          <p>Access Token: ${data.access_token as String}</p>
-          <p>ID Token: ${data.id_token as String}</p>
-        </body>
-      </html>
-    `)
         } catch (err) {
-            console.error(err)
-            res.status(500).send('Something went wrong')
+            console.error('Callback Error:', err);
+            res.status(500).send('Something went wrong during callback');
         }
-    })
+    });
 
-    app.get('/refresh-test', async (req, res) => {
-        const result = await fetch('http://oidc_app:6001/api/v1/auth/refresh', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                refreshToken: '24aeef3b-098c-45e4-94fb-86c38f360bc1'
-            })
-        })
-
-        const data = await result.json()
+    // ✅ PROTECTED ROUTE: Only accessible if logged in
+    app.get('/profile', authenticate, (req: Request, res: Response) => {
+        const decodedUser = (req as any).user;
 
         res.send(`
-    <h2>Refresh Result</h2>
-    <pre>${JSON.stringify(data, null, 2)}</pre>
-  `)
-    })
+            <html>
+                <body style="font-family: sans-serif; padding: 40px;">
+                    <h2>✅ Login Successful</h2>
+                    <p>Your session is now secured via an <strong>HttpOnly Cookie</strong>.</p>
+                    <hr />
+                    <h3>User Data (from Token Claims):</h3>
+                    <pre style="background: #eee; padding: 20px; border-radius: 8px;">${JSON.stringify(decodedUser, null, 2)}</pre>
+                    <br />
+                    <a href="/logout" style="color: red;">Logout</a>
+                </body>
+            </html>
+        `);
+    });
 
+    // Logout: Clear the cookie
+    app.get('/logout', (req, res) => {
+        res.clearCookie('access_token');
+        res.redirect('/');
+    });
 
-
-    // app.use(oidcRouter)
-    // app.use('/api/v1/auth', authRouter)
-
-    return app
+    return app;
 }
