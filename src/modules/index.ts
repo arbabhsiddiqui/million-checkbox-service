@@ -2,12 +2,9 @@ import express from 'express';
 import type { Express } from 'express';
 import cookieParser from "cookie-parser";
 import { AuthRouter } from './auth/auth.routes';
-
-
-const CHECKBOX_COUNT = 100
-export const state = {
-    checkboxes: new Array(CHECKBOX_COUNT).fill(false)
-}
+import { env } from '../common/config/env';
+import { redis } from '../redis-connection';
+import { CHECKBOX_SIZE, CHECKBOX_STATE_KEY } from '..';
 
 
 export function createExpressApplication(): Express {
@@ -29,11 +26,18 @@ export function createExpressApplication(): Express {
 
     // Landing Page (Public)
     app.get('/', (req, res) => {
-        res.send('<h1>Home</h1><a href="http://localhost:6001/api/v1/auth/authorize?client_id=project1&redirect_uri=http://localhost:3001/callback&state=xyz">Login</a>');
+        res.send(`<h1>Home</h1><a href="http://localhost:6001/api/v1/auth/authorize?client_id=${env.OIDC_CLIENT_ID}&redirect_uri=http://localhost:${env.PORT}/callback&state=xyz">Login</a>`);
+
     });
 
-    app.get('/checkboxes', (req, res) => {
-        res.json({ checkboxes: state.checkboxes });
+    app.get('/checkboxes', async (req, res) => {
+        const existingState = await redis.get(CHECKBOX_STATE_KEY)
+
+        if (existingState) {
+            const remoteData = JSON.parse(existingState)
+            return res.json({ checkboxes: remoteData })
+        }
+        res.json({ checkboxes: new Array(CHECKBOX_SIZE).fill(false) });
     });
 
     // Mount the Auth Router

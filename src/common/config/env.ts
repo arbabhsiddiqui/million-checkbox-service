@@ -8,6 +8,8 @@ const envSchema = z.object({
     DATABASE_URI: z.string().default('postgresql://postgres:password@localhost:5432/mydb'),
     OIDC_INTERNAL_URL: z.string().default('http://localhost:6001'),
     OIDC_ISSUER_URL: z.string().default('http://localhost:6001'),
+    OIDC_CLIENT_ID: z.string().default('project1'),
+    OIDC_CLIENT_SECRET: z.string().default('secret'),
 })
 
 export const env = envSchema.parse(process.env)

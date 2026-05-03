@@ -8,20 +8,23 @@ services:
       - "3000:3000"
     volumes:
       - .:/app
-      # - pnpm-store:/pnpm/store
-      # - /app/node_modules
     environment:
+      # We use the service names 'postgres' and 'valkey' as hostnames
       DATABASE_URL: postgres://admin:admin@postgres:5432/million_checkbox_db
+      REDIS_HOST: valkey
     depends_on:
       - postgres
+      - valkey
     networks:
-      - app_network
+      - internal_net # Connects to DBs
+      - app_network # Connects to external OIDC provider
     command: tail -f /dev/null
 
   postgres:
     image: postgres:17
     container_name: million_checkbox_db
     restart: unless-stopped
+    # Ports only exposed for local debugging, app uses internal port 5432
     ports:
       - "5445:5432"
     environment:
@@ -30,12 +33,24 @@ services:
       POSTGRES_DB: million_checkbox_db
     volumes:
       - pgdatamillioncheckboxdb:/var/lib/postgresql/data
+    networks:
+      - internal_net
+
+  valkey:
+    image: valkey/valkey:latest
+    container_name: million_checkbox_valkey
+    networks:
+      - internal_net
 
 networks:
+  # This is the private bridge for your app services
+  internal_net:
+    driver: bridge
+  
+  # This references your existing external network
   app_network:
     name: oidc-auth-ts_app_network
     external: true
 
 volumes:
   pgdatamillioncheckboxdb:
-  # pnpm-store:

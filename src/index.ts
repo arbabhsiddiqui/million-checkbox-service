@@ -1,8 +1,14 @@
 import { createServer } from 'node:http'
 import { env } from './common/config/env'
-import { createExpressApplication, state } from './modules'
+import { createExpressApplication } from './modules'
 import { Server } from 'socket.io';
 
+
+import { subscriber, publisher, redis } from './redis-connection'
+import { index } from 'drizzle-orm/sqlite-core/indexes';
+
+export const CHECKBOX_SIZE = 300;
+export const CHECKBOX_STATE_KEY = 'checkbox-state'
 
 async function main() {
     try {
@@ -11,15 +17,37 @@ async function main() {
         const io = new Server();
         io.attach(server)
 
+        await subscriber.subscribe('internal-server:checkbox:change')
+        subscriber.on('message', (channel, message) => {
+            if (channel === 'internal-server:checkbox:change') {
+
+                const { index, checked } = JSON.parse(message)
+                io.emit('server:checkbox-change', { index, checked })
+
+            }
+        })
+
         io.on('connection', (socket) => {
             console.log('A user connected:', socket.id);
 
-            socket.on('client:checkbox-change', (data) => {
+            socket.on('client:checkbox-change', async (data) => {
 
                 console.log(`[Socket:${socket.id}:client:checkbox:change]`, data)
 
-                io.emit('server:checkbox-change', data)
-                state.checkboxes[data.index] = data.checked
+                const existingState = await redis.get(CHECKBOX_STATE_KEY)
+
+                if (existingState) {
+                    const remoteData = JSON.parse(existingState)
+                    remoteData[data.index] = data.checked
+                    await redis.set(CHECKBOX_STATE_KEY, JSON.stringify(remoteData))
+                } else {
+                    await redis.set(CHECKBOX_STATE_KEY, JSON.stringify(new Array(CHECKBOX_SIZE).fill(false)))
+                }
+
+
+
+                await publisher.publish('internal-server:checkbox:change', JSON.stringify(data))
+
             })
 
             // socket.on('disconnect', () => {
