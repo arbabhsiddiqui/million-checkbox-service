@@ -6,8 +6,6 @@ services:
     container_name: million_checkbox_app
     ports:
       - "3000:3000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - .:/app
       # - pnpm-store:/pnpm/store
@@ -16,6 +14,8 @@ services:
       DATABASE_URL: postgres://admin:admin@postgres:5432/million_checkbox_db
     depends_on:
       - postgres
+    networks:
+      - app_network
     command: tail -f /dev/null
 
   postgres:
@@ -30,6 +30,11 @@ services:
       POSTGRES_DB: million_checkbox_db
     volumes:
       - pgdatamillioncheckboxdb:/var/lib/postgresql/data
+
+networks:
+  app_network:
+    name: oidc-auth-ts_app_network
+    external: true
 
 volumes:
   pgdatamillioncheckboxdb:
